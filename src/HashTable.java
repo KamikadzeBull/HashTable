@@ -1,11 +1,8 @@
-import java.util.Collection;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
+import java.util.*;
 
 public class HashTable<K, V> implements Map<K, V> {
 
-    private HashTable.Node[] table;
+    private Node<?, ?>[] table;
     private boolean exists[];
 
     private int capacity;
@@ -13,7 +10,6 @@ public class HashTable<K, V> implements Map<K, V> {
     private float loadFactor;
 
     private static final int DEFAULT_CAPACITY = 8;
-    private static final int MAXIMUM_CAPACITY = 16;
     private static final float LOAD_FACTOR = 0.75f;
 
     public HashTable(){
@@ -25,6 +21,7 @@ public class HashTable<K, V> implements Map<K, V> {
     }
 
     public HashTable(float loadFactor, int capacity){
+        int MAXIMUM_CAPACITY = 16;
         if (loadFactor <= LOAD_FACTOR) {
             this.loadFactor = loadFactor;
         } else {
@@ -38,7 +35,7 @@ public class HashTable<K, V> implements Map<K, V> {
             this.capacity = DEFAULT_CAPACITY;
         }
 
-        table = new HashTable.Node[this.capacity];
+        table = new Node[this.capacity];
     }
 
     @Override
@@ -53,31 +50,141 @@ public class HashTable<K, V> implements Map<K, V> {
 
     @Override
     public boolean containsKey(Object key) {
-        return false;
+        if (key == null) {
+            throw new NullPointerException();
+        }
+        return contains(key) >= 0;
     }
 
     @Override
     public boolean containsValue(Object value) {
+        if (value == null) {
+            throw new NullPointerException();
+        }
+        for (int i = 0; i <= capacity - 1; i++) {
+            if (exists[i] && table[i].getValue().equals(value)) {
+                return true;
+            }
+        }
         return false;
     }
 
-    private int contains(Object key){
-        return 0;
+    private int contains(Object key) {
+        return find(key, Type.CONTAINS);
+    }
+
+    private int findFree(Object key) {
+        return find(key, Type.FREE);
+    }
+
+    private int forRemove(Object key) {
+        return find(key, Type.DELETE);
+    }
+
+    private int getIndex(Object key) {
+        return Math.abs(key.hashCode() + size) % (capacity - 1);
+    }
+
+    private int find(Object key, Type type) {
+        int index = getIndex(key);
+        for (int i = index, j = 0; j <= capacity - 1; i = (i + 1) % (capacity - 1), j++) {
+            boolean b = false;
+            if (table[i] != null) {
+                b = table[i].getKey().equals(key);
+            }
+            if (predicate(type, exists[i], b)) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private boolean predicate(Type type, boolean b1, boolean b2) {
+        boolean bool = false;
+        switch (type) {
+            case CONTAINS:
+                bool = b1 && b2;
+                break;
+            case FREE:
+                bool = !b1;
+                break;
+            case DELETE:
+                bool = b2;
+                break;
+        }
+        return bool;
     }
 
     @Override
     public V get(Object key) {
-        return null;
+        if (key == null) {
+            throw new NullPointerException();
+        }
+        int index = contains(key);
+        if (index < 0) {
+            return null;
+        }
+        @SuppressWarnings("unchecked")
+        Node<K, V> result = (Node<K, V>) table[index];
+        return result.getValue();
     }
 
     @Override
     public V put(K key, V value) {
-        return null;
+        if (key == null || value == null) {
+            throw new NullPointerException();
+        }
+        int index = contains(key);
+        if (index < 0) {
+            putNode(key, value);
+            return null;
+        }
+        @SuppressWarnings("unchecked")
+        Node<K, V> result = (Node<K, V>) table[index];
+        result.setValue(value);
+        return result.getValue();
+    }
+
+    private void putNode(K key, V value) {
+        if (size / capacity >= loadFactor) {
+            rehash();
+        }
+        int index = findFree(key);
+        table[index] = new Node<>(key, value);
+        exists[index] = true;
+        size++;
+    }
+
+    private void rehash() {
+        int old = capacity;
+        capacity *= 2;
+        Node[] between = Arrays.copyOf(table, old);
+        boolean[] del = Arrays.copyOf(exists, old);
+
+        table = new Node[capacity];
+        exists = new boolean[capacity];
+        for (int i = 0; i < old; i++) {
+            if (exists[i]) {
+                int index = findFree(between[i].getKey());
+                table[index] = between[i];
+                exists[index] = true;
+            }
+        }
     }
 
     @Override
     public V remove(Object key) {
-        return null;
+        int index = forRemove(key);
+        if (index < 0){
+            return null;
+        } else if (exists[index]) {
+            exists[index] = false;
+            size--;
+            //noinspection unchecked
+            return (V) table[index].getValue();
+        } else {
+            return null;
+        }
     }
 
     @Override
@@ -105,7 +212,11 @@ public class HashTable<K, V> implements Map<K, V> {
         return null;
     }
 
-    class Node implements Map.Entry<K, V>{
+    enum Type {
+        CONTAINS, FREE, DELETE
+    }
+
+    private static class Node<K, V> implements Map.Entry<K, V>{
         private K key;
         private V value;
 
@@ -135,7 +246,7 @@ public class HashTable<K, V> implements Map<K, V> {
         }
 
         public final String toString() {
-            return key + "=>" + value;
+            return key.toString() + "=" + value.toString();
         }
 
         @Override
@@ -145,11 +256,12 @@ public class HashTable<K, V> implements Map<K, V> {
 
         @Override
         public boolean equals(Object obj) {
-            if (obj instanceof HashTable.Node) {
-                HashTable.Node node = (HashTable.Node) obj;
-                return Objects.equals(key, node.key) && Objects.equals(value, node.value);
+            if (!(obj instanceof Map.Entry)) {
+                return false;
             }
-            return false;
+            Map.Entry<?, ?> e = (Map.Entry<?, ?>) obj;
+            return (key == null ? e.getKey() == null : key.equals(e.getKey())) &&
+                    (value == null ? e.getValue() == null : value.equals(e.getValue()));
         }
     }
 }
