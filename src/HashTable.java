@@ -36,6 +36,7 @@ public class HashTable<K, V> implements Map<K, V> {
         }
 
         table = new Node[this.capacity];
+        exists = new boolean[this.capacity];
     }
 
     @Override
